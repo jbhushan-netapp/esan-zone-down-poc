@@ -1,0 +1,15 @@
+[Unit]
+Description=Connect Azure Elastic SAN iSCSI volumes
+After=network-online.target iscsid.service
+Wants=network-online.target
+Requires=iscsid.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'iscsiadm -m node --loginall=all || true'
+ExecStartPost=/bin/sleep 5
+ExecStop=/bin/bash -c 'iscsiadm -m node --logoutall=all || true'
+
+[Install]
+WantedBy=multi-user.target

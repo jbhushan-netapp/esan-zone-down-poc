@@ -1,0 +1,14 @@
+[Unit]
+Description=Zone-Down POC Secondary
+After=iscsi-esan.service
+Requires=iscsi-esan.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 30
+ExecStart=/root/poc/secondary --devices /dev/sda,/dev/sdb,/dev/sdc,/dev/sdd,/dev/sde,/dev/sdf,/dev/sdg,/dev/sdh,/dev/sdi,/dev/sdj --pr-key 0x2000 --timeout 10s --log-file /var/log/poc/secondary.log
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

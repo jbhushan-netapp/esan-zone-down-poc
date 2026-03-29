@@ -10,7 +10,7 @@ ownership, and the secondary cleanly returns to standby.
 ## Architecture
 
 ```
-┌──────────────┐   TCP heartbeat (port 4000)   ┌──────────────┐
+┌──────────────┐   TCP heartbeat (port 4000)    ┌──────────────┐
 │  Primary VM  │ ─────────────────────────────► │ Secondary VM │
 │  (Zone 1)    │                                │  (Zone 2)    │
 └──────┬───────┘                                └──────┬───────┘
@@ -20,7 +20,7 @@ ownership, and the secondary cleanly returns to standby.
        ▼                                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Azure Elastic SAN  (Premium_ZRS)               │
-│  vol-01 ── vol-02 ── vol-03 ── ... ── vol-10  (iSCSI)      │
+│  vol-01 ── vol-02 ── vol-03 ── ... ── vol-10  (iSCSI)       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,7 +49,7 @@ Two independent channels detect primary failure:
    compares timestamps.
 
 The secondary initiates a takeover **only when both channels are stale** past
-the configured timeout (default 10 s). This avoids false positives from
+the configured timeout (default 10s). This avoids false positives from
 transient network blips or individual disk hiccups.
 
 ## SCSI Persistent Reservations
@@ -90,7 +90,7 @@ Runs on the primary VM. On startup it:
 Runs on the secondary VM. It operates as a state machine:
 
 ```
-  ┌─────────┐   both channels stale   ┌──────────┐
+  ┌─────────┐   both channels stale    ┌──────────┐
   │ Standby │ ────────────────────────►│ Takeover │
   │(monitor)│                          │(preempt) │
   └────▲────┘                          └────┬─────┘
@@ -98,8 +98,8 @@ Runs on the secondary VM. It operates as a state machine:
        │  write failures detected           │  reservations acquired
        │  (preempted by primary)            ▼
        │                              ┌──────────┐
-       └──────────────────────────────│  Active   │
-                                      │ (writing) │
+       └──────────────────────────────│  Active  │
+                                      │ (writing)│
                                       └──────────┘
 ```
 
@@ -234,6 +234,70 @@ monitoring primary with 10s timeout across 10 devices (both channels must fail)
   monitoring mode
 - System reaches steady state with primary writing and secondary monitoring
 
+## Repository Structure
+
+```
+├── README.md
+├── primary_main.go          # Primary VM program
+├── secondary_main.go        # Secondary VM program
+├── systemd/
+│   ├── iscsi-esan.service         # iSCSI login/logout on boot
+│   ├── iptables-poc.service       # Open TCP port 4000
+│   ├── zonedown-primary.service   # Primary heartbeat service
+│   └── zonedown-secondary.service # Secondary monitor service
+└── scripts/
+    ├── setup-azure-infra.sh  # Create Elastic SAN, volumes (run once)
+    ├── setup-vm.sh           # Install packages, connect iSCSI, deploy services
+    ├── monitor.sh            # Check status locally on a VM
+    └── monitor-remote.sh     # Check status remotely via az vm run-command
+```
+
+## Quick Start
+
+### 1. Create Azure infrastructure
+
+```bash
+./scripts/setup-azure-infra.sh
+```
+
+This creates the Elastic SAN, volume group, and 10 volumes. VMs must be
+created separately (e.g., via the portal or CLI) in different availability
+zones.
+
+### 2. Set up each VM
+
+Copy this repo to both VMs, then run:
+
+```bash
+# On the primary VM:
+./scripts/setup-vm.sh --role primary --remote-ip <SECONDARY_IP> \
+  --portal es-n4zhdze1aa20.z2.blob.storage.azure.net:3260
+
+# On the secondary VM:
+./scripts/setup-vm.sh --role secondary \
+  --portal es-n4zhdze1aa20.z2.blob.storage.azure.net:3260
+```
+
+### 3. Start services
+
+```bash
+systemctl start iscsi-esan iptables-poc zonedown-primary   # on primary
+systemctl start iscsi-esan iptables-poc zonedown-secondary  # on secondary
+```
+
+### 4. Monitor
+
+```bash
+# Locally on a VM:
+./scripts/monitor.sh
+./scripts/monitor.sh --takeover-events
+
+# Remotely via Azure CLI:
+./scripts/monitor-remote.sh
+./scripts/monitor-remote.sh --takeover
+./scripts/monitor-remote.sh --secondary
+```
+
 ## Building
 
 Requires Go 1.21+ and `sg3-utils` on the target VMs.
@@ -254,3 +318,4 @@ go build -o secondary secondary_main.go
 - `sg3-utils` — provides `sg_persist` for SCSI PR operations
 - `open-iscsi` — provides `iscsiadm` for iSCSI target management
 - `iptables` — for TCP port 4000 firewall rules
+- Go 1.21+ — for building the programs

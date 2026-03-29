@@ -1,0 +1,12 @@
+[Unit]
+Description=Open TCP port 4000 for POC heartbeat
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/iptables -A INPUT -p tcp --dport 4000 -j ACCEPT
+
+[Install]
+WantedBy=multi-user.target

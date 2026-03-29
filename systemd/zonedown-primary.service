@@ -1,0 +1,13 @@
+[Unit]
+Description=Zone-Down POC Primary
+After=iscsi-esan.service
+Requires=iscsi-esan.service
+
+[Service]
+Type=simple
+ExecStart=/root/poc/primary --devices /dev/sda,/dev/sdb,/dev/sdc,/dev/sdd,/dev/sde,/dev/sdf,/dev/sdg,/dev/sdh,/dev/sdi,/dev/sdj --remote-ip <SECONDARY_IP> --pr-key 0x1000 --log-file /var/log/poc/primary.log
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
