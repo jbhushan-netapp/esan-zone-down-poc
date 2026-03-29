@@ -45,8 +45,17 @@ echo "=== Role: $ROLE ==="
 
 # --- Install packages ---
 echo "=== Installing packages ==="
-apt-get update -qq
-apt-get install -y open-iscsi sg3-utils
+if command -v tdnf &>/dev/null; then
+  tdnf install -y iscsi-initiator-utils sg3_utils golang
+elif command -v apt-get &>/dev/null; then
+  apt-get update -qq
+  apt-get install -y open-iscsi sg3-utils golang-go
+elif command -v yum &>/dev/null; then
+  yum install -y iscsi-initiator-utils sg3_utils golang
+else
+  echo "ERROR: No supported package manager found"
+  exit 1
+fi
 
 # --- Start iSCSI daemon ---
 systemctl enable --now iscsid
