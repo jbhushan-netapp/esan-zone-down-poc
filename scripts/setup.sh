@@ -112,111 +112,164 @@ echo "============================================="
 echo ""
 
 # =============================================
-# PHASE 1: Azure Infrastructure
+# PHASE 1: Azure Infrastructure (idempotent)
 # =============================================
 
-echo "=== [1/10] Creating resource group ==="
-az group create --name "$RG" --location "$LOCATION" -o none
-echo "  $RG ($LOCATION)"
+echo "=== [1/10] Resource group ==="
+if az group show --name "$RG" -o none 2>/dev/null; then
+  echo "  $RG already exists — reusing"
+else
+  az group create --name "$RG" --location "$LOCATION" -o none
+  echo "  $RG created ($LOCATION)"
+fi
 
 echo ""
-echo "=== [2/10] Creating VNet, subnet, and NSG ==="
-az network vnet create \
-  --resource-group "$RG" \
-  --name "$VNET_NAME" \
-  --address-prefix "$VNET_PREFIX" \
-  --subnet-name "$SUBNET_NAME" \
-  --subnet-prefix "$VNET_PREFIX" \
-  -o none
+echo "=== [2/10] VNet, subnet, and NSG ==="
+if az network vnet show --resource-group "$RG" --name "$VNET_NAME" -o none 2>/dev/null; then
+  echo "  $VNET_NAME already exists — reusing"
+else
+  az network vnet create \
+    --resource-group "$RG" \
+    --name "$VNET_NAME" \
+    --address-prefix "$VNET_PREFIX" \
+    --subnet-name "$SUBNET_NAME" \
+    --subnet-prefix "$VNET_PREFIX" \
+    -o none
+  echo "  $VNET_NAME / $SUBNET_NAME created"
+fi
 
-az network nsg create \
-  --resource-group "$RG" \
-  --name "$NSG_NAME" \
-  -o none
+if az network nsg show --resource-group "$RG" --name "$NSG_NAME" -o none 2>/dev/null; then
+  echo "  $NSG_NAME already exists — reusing"
+else
+  az network nsg create \
+    --resource-group "$RG" \
+    --name "$NSG_NAME" \
+    -o none
 
-az network nsg rule create \
-  --resource-group "$RG" \
-  --nsg-name "$NSG_NAME" \
-  --name AllowVNetInternal \
-  --priority 110 \
-  --direction Inbound \
-  --access Allow \
-  --protocol '*' \
-  --source-address-prefixes VirtualNetwork \
-  --destination-address-prefixes VirtualNetwork \
-  --destination-port-ranges '*' \
-  -o none
+  az network nsg rule create \
+    --resource-group "$RG" \
+    --nsg-name "$NSG_NAME" \
+    --name AllowVNetInternal \
+    --priority 110 \
+    --direction Inbound \
+    --access Allow \
+    --protocol '*' \
+    --source-address-prefixes VirtualNetwork \
+    --destination-address-prefixes VirtualNetwork \
+    --destination-port-ranges '*' \
+    -o none
 
-az network vnet subnet update \
-  --resource-group "$RG" \
-  --vnet-name "$VNET_NAME" \
-  --name "$SUBNET_NAME" \
-  --network-security-group "$NSG_NAME" \
-  -o none
-echo "  $VNET_NAME / $SUBNET_NAME / $NSG_NAME"
+  az network vnet subnet update \
+    --resource-group "$RG" \
+    --vnet-name "$VNET_NAME" \
+    --name "$SUBNET_NAME" \
+    --network-security-group "$NSG_NAME" \
+    -o none
+  echo "  $NSG_NAME created and attached"
+fi
 
 echo ""
-echo "=== [3/10] Creating Elastic SAN ==="
-az elastic-san create \
-  --elastic-san-name "$ESAN_NAME" \
-  --resource-group "$RG" \
-  --location "$LOCATION" \
-  --base-size-tib "$ESAN_BASE_SIZE_TIB" \
-  --extended-capacity-size-tib 0 \
-  --sku '{name:Premium_ZRS,tier:Premium}' \
-  -o none
+echo "=== [3/10] Elastic SAN ==="
+if az elastic-san show --elastic-san-name "$ESAN_NAME" --resource-group "$RG" -o none 2>/dev/null; then
+  echo "  $ESAN_NAME already exists — reusing"
+else
+  az elastic-san create \
+    --elastic-san-name "$ESAN_NAME" \
+    --resource-group "$RG" \
+    --location "$LOCATION" \
+    --base-size-tib "$ESAN_BASE_SIZE_TIB" \
+    --extended-capacity-size-tib 0 \
+    --sku '{name:Premium_ZRS,tier:Premium}' \
+    -o none
+  echo "  $ESAN_NAME created (Premium_ZRS, ${ESAN_BASE_SIZE_TIB} TiB)"
+fi
 
-az elastic-san volume-group create \
+if az elastic-san volume-group show --elastic-san-name "$ESAN_NAME" --volume-group-name "$VG_NAME" --resource-group "$RG" -o none 2>/dev/null; then
+  echo "  $VG_NAME already exists — reusing"
+else
+  az elastic-san volume-group create \
+    --elastic-san-name "$ESAN_NAME" \
+    --volume-group-name "$VG_NAME" \
+    --resource-group "$RG" \
+    -o none
+  echo "  $VG_NAME created"
+fi
+
+echo ""
+echo "=== [4/10] Volumes ==="
+EXISTING_VOLS=$(az elastic-san volume list \
   --elastic-san-name "$ESAN_NAME" \
   --volume-group-name "$VG_NAME" \
   --resource-group "$RG" \
-  -o none
-echo "  $ESAN_NAME / $VG_NAME (Premium_ZRS, ${ESAN_BASE_SIZE_TIB} TiB)"
+  --query "[].name" -o tsv 2>/dev/null || true)
 
-echo ""
-echo "=== [4/10] Creating ${VOL_COUNT} volumes ==="
 for i in $(seq -w 1 "$VOL_COUNT"); do
-  az elastic-san volume create \
-    --elastic-san-name "$ESAN_NAME" \
-    --volume-group-name "$VG_NAME" \
-    --name "${VOL_PREFIX}-$i" \
-    --size-gib "$VOL_SIZE_GIB" \
-    --resource-group "$RG" \
-    -o none
-  echo "  ${VOL_PREFIX}-$i (${VOL_SIZE_GIB} GiB)"
+  VOL_NAME="${VOL_PREFIX}-$i"
+  if echo "$EXISTING_VOLS" | grep -qx "$VOL_NAME"; then
+    echo "  $VOL_NAME exists — reusing"
+  else
+    az elastic-san volume create \
+      --elastic-san-name "$ESAN_NAME" \
+      --volume-group-name "$VG_NAME" \
+      --name "$VOL_NAME" \
+      --size-gib "$VOL_SIZE_GIB" \
+      --resource-group "$RG" \
+      -o none
+    echo "  $VOL_NAME created (${VOL_SIZE_GIB} GiB)"
+  fi
 done
 
 echo ""
-echo "=== [5/10] Creating VMs ==="
-echo "  $PRIMARY_VM (zone 1)..."
-az vm create \
-  --resource-group "$RG" \
-  --name "$PRIMARY_VM" \
-  --image "$VM_IMAGE" \
-  --size "$VM_SIZE" \
-  --zone 1 \
-  --vnet-name "$VNET_NAME" \
-  --subnet "$SUBNET_NAME" \
-  --nsg "$NSG_NAME" \
-  --admin-username "$ADMIN_USER" \
-  --ssh-key-values "$SSH_PUB_KEY" \
-  --public-ip-sku Standard \
-  -o none
+echo "=== [5/10] VMs ==="
+if az vm show --resource-group "$RG" --name "$PRIMARY_VM" -o none 2>/dev/null; then
+  echo "  $PRIMARY_VM already exists"
+  POWER=$(az vm get-instance-view --resource-group "$RG" --name "$PRIMARY_VM" \
+    --query "instanceView.statuses[1].displayStatus" -o tsv 2>/dev/null || echo "unknown")
+  if [[ "$POWER" == "VM deallocated" || "$POWER" == "VM stopped" ]]; then
+    echo "  $PRIMARY_VM is $POWER — starting..."
+    az vm start --resource-group "$RG" --name "$PRIMARY_VM" -o none
+  fi
+else
+  echo "  Creating $PRIMARY_VM (zone 1)..."
+  az vm create \
+    --resource-group "$RG" \
+    --name "$PRIMARY_VM" \
+    --image "$VM_IMAGE" \
+    --size "$VM_SIZE" \
+    --zone 1 \
+    --vnet-name "$VNET_NAME" \
+    --subnet "$SUBNET_NAME" \
+    --nsg "$NSG_NAME" \
+    --admin-username "$ADMIN_USER" \
+    --ssh-key-values "$SSH_PUB_KEY" \
+    --public-ip-sku Standard \
+    -o none
+fi
 
-echo "  $SECONDARY_VM (zone 2)..."
-az vm create \
-  --resource-group "$RG" \
-  --name "$SECONDARY_VM" \
-  --image "$VM_IMAGE" \
-  --size "$VM_SIZE" \
-  --zone 2 \
-  --vnet-name "$VNET_NAME" \
-  --subnet "$SUBNET_NAME" \
-  --nsg "$NSG_NAME" \
-  --admin-username "$ADMIN_USER" \
-  --ssh-key-values "$SSH_PUB_KEY" \
-  --public-ip-sku Standard \
-  -o none
+if az vm show --resource-group "$RG" --name "$SECONDARY_VM" -o none 2>/dev/null; then
+  echo "  $SECONDARY_VM already exists"
+  POWER=$(az vm get-instance-view --resource-group "$RG" --name "$SECONDARY_VM" \
+    --query "instanceView.statuses[1].displayStatus" -o tsv 2>/dev/null || echo "unknown")
+  if [[ "$POWER" == "VM deallocated" || "$POWER" == "VM stopped" ]]; then
+    echo "  $SECONDARY_VM is $POWER — starting..."
+    az vm start --resource-group "$RG" --name "$SECONDARY_VM" -o none
+  fi
+else
+  echo "  Creating $SECONDARY_VM (zone 2)..."
+  az vm create \
+    --resource-group "$RG" \
+    --name "$SECONDARY_VM" \
+    --image "$VM_IMAGE" \
+    --size "$VM_SIZE" \
+    --zone 2 \
+    --vnet-name "$VNET_NAME" \
+    --subnet "$SUBNET_NAME" \
+    --nsg "$NSG_NAME" \
+    --admin-username "$ADMIN_USER" \
+    --ssh-key-values "$SSH_PUB_KEY" \
+    --public-ip-sku Standard \
+    -o none
+fi
 
 # --- Retrieve IPs ---
 PRIMARY_PRIVATE_IP=$(az vm list-ip-addresses --resource-group "$RG" --name "$PRIMARY_VM" \
