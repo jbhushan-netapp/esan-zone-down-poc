@@ -358,10 +358,8 @@ SECONDARY_SRC_B64=$(base64 -w0 "$REPO_DIR/secondary_main.go")
 BUILD_SCRIPT="
 export HOME=/root
 export GOCACHE=/root/.cache/go-build
-if go version 2>/dev/null | grep -q microsoft; then
-  export GOEXPERIMENT=ms_nocgo_opensslcrypto
-  export CGO_ENABLED=0
-fi
+export GOEXPERIMENT=ms_nocgo_opensslcrypto
+export CGO_ENABLED=0
 mkdir -p /root/poc
 echo '$PRIMARY_SRC_B64' | base64 -d > /root/poc/primary_main.go
 echo '$SECONDARY_SRC_B64' | base64 -d > /root/poc/secondary_main.go

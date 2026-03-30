@@ -108,10 +108,8 @@ echo "=== Device list: $DEVICES ==="
 echo "=== Building Go binaries ==="
 export HOME=/root
 export GOCACHE=/root/.cache/go-build
-if go version 2>/dev/null | grep -q microsoft; then
-  export GOEXPERIMENT=ms_nocgo_opensslcrypto
-  export CGO_ENABLED=0
-fi
+export GOEXPERIMENT=ms_nocgo_opensslcrypto
+export CGO_ENABLED=0
 
 mkdir -p /root/poc
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
