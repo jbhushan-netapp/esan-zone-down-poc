@@ -208,6 +208,21 @@ else
   echo "  $VG_NAME created"
 fi
 
+SUBNET_ID=$(az network vnet subnet show \
+  --resource-group "$RG" \
+  --vnet-name "$VNET_NAME" \
+  --name "$SUBNET_NAME" \
+  --query id -o tsv)
+
+echo "  Ensuring subnet network ACL on volume group..."
+az elastic-san volume-group update \
+  --elastic-san-name "$ESAN_NAME" \
+  --volume-group-name "$VG_NAME" \
+  --resource-group "$RG" \
+  --network-acls virtual-network-rules="[{id:$SUBNET_ID,action:Allow}]" \
+  -o none
+echo "  Subnet $SUBNET_NAME allowed on $VG_NAME"
+
 echo ""
 echo "=== [4/10] Volumes ==="
 EXISTING_VOLS=$(az elastic-san volume list \
