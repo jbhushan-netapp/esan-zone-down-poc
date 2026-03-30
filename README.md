@@ -254,15 +254,20 @@ monitoring primary with 10s timeout across 10 devices (both channels must fail)
 
 ## Quick Start
 
+All scripts accept `--name <prefix>` to derive resource names. For example,
+`--name alice` creates `alice-zone-down-poc-rg`, `alice-zrs-esan`, etc.
+The default prefix is `jbhushan`.
+
 ### 1. Create Azure infrastructure
 
 ```bash
-./scripts/setup-azure-infra.sh
+./scripts/setup-azure-infra.sh --name myprefix
 ```
 
-This creates the Elastic SAN, volume group, and 10 volumes. VMs must be
-created separately (e.g., via the portal or CLI) in different availability
-zones.
+This creates the full stack end-to-end: resource group, VNet/subnet/NSG,
+Elastic SAN with 10 volumes, and two VMs (zone 1 and zone 2). Run
+`./scripts/setup-azure-infra.sh --help` for all options (location, VM size,
+volume count, etc.).
 
 ### 2. Set up each VM
 
@@ -270,13 +275,16 @@ Copy this repo to both VMs, then run:
 
 ```bash
 # On the primary VM:
-./scripts/setup-vm.sh --role primary --remote-ip <SECONDARY_IP> \
-  --portal es-n4zhdze1aa20.z2.blob.storage.azure.net:3260
+./scripts/setup-vm.sh --name myprefix --role primary \
+  --remote-ip <SECONDARY_PRIVATE_IP> --portal <PORTAL_HOST:3260>
 
 # On the secondary VM:
-./scripts/setup-vm.sh --role secondary \
-  --portal es-n4zhdze1aa20.z2.blob.storage.azure.net:3260
+./scripts/setup-vm.sh --name myprefix --role secondary \
+  --portal <PORTAL_HOST:3260>
 ```
+
+This installs packages, connects all iSCSI volumes, builds the Go binaries,
+and installs the systemd services.
 
 ### 3. Start services
 
@@ -293,9 +301,9 @@ systemctl start iscsi-esan iptables-poc zonedown-secondary  # on secondary
 ./scripts/monitor.sh --takeover-events
 
 # Remotely via Azure CLI:
-./scripts/monitor-remote.sh
-./scripts/monitor-remote.sh --takeover
-./scripts/monitor-remote.sh --secondary
+./scripts/monitor-remote.sh --name myprefix
+./scripts/monitor-remote.sh --name myprefix --takeover
+./scripts/monitor-remote.sh --name myprefix --secondary
 ```
 
 ## Building
