@@ -377,50 +377,55 @@ echo "=== [9/10] Installing systemd services ==="
 ISCSI_SVC_B64=$(base64 -w0 "$REPO_DIR/systemd/iscsi-esan.service")
 IPTABLES_SVC_B64=$(base64 -w0 "$REPO_DIR/systemd/iptables-poc.service")
 
-# Build device list (assumes sda..sdj for 10 volumes, auto-detect on VM)
-DEVICE_DETECT='DEVICES=$(lsblk -d -n -o NAME,TRAN | grep iscsi | awk '"'"'{print "/dev/"$1}'"'"' | sort | tr "\n" "," | sed "s/,$//"); echo "Devices: $DEVICES"'
-
-# Primary service
 PRIMARY_SVC_CONTENT=$(sed "s|<SECONDARY_IP>|$SECONDARY_PRIVATE_IP|g" "$REPO_DIR/systemd/zonedown-primary.service")
 PRIMARY_SVC_B64=$(echo "$PRIMARY_SVC_CONTENT" | base64 -w0)
-
-PRIMARY_SVC_SCRIPT="
-echo '$ISCSI_SVC_B64' | base64 -d > /etc/systemd/system/iscsi-esan.service
-echo '$IPTABLES_SVC_B64' | base64 -d > /etc/systemd/system/iptables-poc.service
-echo '$PRIMARY_SVC_B64' | base64 -d > /etc/systemd/system/zonedown-primary.service
-$DEVICE_DETECT
-sed -i \"s|--devices [^ ]*|--devices \$DEVICES|\" /etc/systemd/system/zonedown-primary.service
-mkdir -p /var/log/poc
-systemctl daemon-reload
-systemctl enable iscsi-esan iptables-poc zonedown-primary
-echo 'PRIMARY SERVICES INSTALLED'
-"
-echo "  Primary..."
-run_on_vm "$PRIMARY_VM" "$PRIMARY_SVC_SCRIPT"
-
-# Secondary service
 SECONDARY_SVC_B64=$(base64 -w0 "$REPO_DIR/systemd/zonedown-secondary.service")
 
-SECONDARY_SVC_SCRIPT="
+# Write a self-contained install script that detects devices inside the VM
+install_svc_script() {
+  local role_svc_b64="$1"
+  local role_svc_name="$2"
+  cat <<REMOTE_EOF
+#!/bin/bash
+set -e
 echo '$ISCSI_SVC_B64' | base64 -d > /etc/systemd/system/iscsi-esan.service
 echo '$IPTABLES_SVC_B64' | base64 -d > /etc/systemd/system/iptables-poc.service
-echo '$SECONDARY_SVC_B64' | base64 -d > /etc/systemd/system/zonedown-secondary.service
-$DEVICE_DETECT
-sed -i \"s|--devices [^ ]*|--devices \$DEVICES|\" /etc/systemd/system/zonedown-secondary.service
+echo '$role_svc_b64' | base64 -d > /etc/systemd/system/${role_svc_name}.service
+DEVICES=\$(lsblk -d -n -o NAME,TRAN | grep iscsi | awk '{print "/dev/" \$1}' | sort | tr '\n' ',' | sed 's/,\$//')
+echo "Devices: \$DEVICES"
+if [ -n "\$DEVICES" ]; then
+  sed -i "s|--devices [^ ]*|--devices \$DEVICES|" /etc/systemd/system/${role_svc_name}.service
+fi
 mkdir -p /var/log/poc
 systemctl daemon-reload
-systemctl enable iscsi-esan iptables-poc zonedown-secondary
-echo 'SECONDARY SERVICES INSTALLED'
-"
+systemctl enable iscsi-esan iptables-poc ${role_svc_name}
+echo "${role_svc_name} INSTALLED"
+REMOTE_EOF
+}
+
+echo "  Primary..."
+run_on_vm "$PRIMARY_VM" "$(install_svc_script "$PRIMARY_SVC_B64" "zonedown-primary")"
+
 echo "  Secondary..."
-run_on_vm "$SECONDARY_VM" "$SECONDARY_SVC_SCRIPT"
+run_on_vm "$SECONDARY_VM" "$(install_svc_script "$SECONDARY_SVC_B64" "zonedown-secondary")"
 
 echo ""
 echo "=== [10/10] Starting services ==="
+SVC_START_PRIMARY='#!/bin/bash
+systemctl start iscsi-esan iptables-poc zonedown-primary
+sleep 2
+systemctl is-active zonedown-primary && echo "PRIMARY RUNNING" || echo "PRIMARY FAILED"
+'
+SVC_START_SECONDARY='#!/bin/bash
+systemctl start iscsi-esan iptables-poc zonedown-secondary
+echo "SECONDARY STARTING (30s delay)"
+sleep 35
+systemctl is-active zonedown-secondary && echo "SECONDARY RUNNING" || echo "SECONDARY FAILED"
+'
 echo "  Primary..."
-run_on_vm "$PRIMARY_VM" 'systemctl start iscsi-esan iptables-poc zonedown-primary && sleep 2 && systemctl is-active zonedown-primary && echo "PRIMARY RUNNING" || echo "PRIMARY FAILED"'
+run_on_vm "$PRIMARY_VM" "$SVC_START_PRIMARY"
 echo "  Secondary (30s startup delay)..."
-run_on_vm "$SECONDARY_VM" 'systemctl start iscsi-esan iptables-poc zonedown-secondary && echo "SECONDARY STARTING (30s delay)" && sleep 35 && systemctl is-active zonedown-secondary && echo "SECONDARY RUNNING" || echo "SECONDARY FAILED"'
+run_on_vm "$SECONDARY_VM" "$SVC_START_SECONDARY"
 
 echo ""
 echo "============================================="
