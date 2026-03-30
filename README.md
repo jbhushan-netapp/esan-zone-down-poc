@@ -238,6 +238,7 @@ monitoring primary with 10s timeout across 10 devices (both channels must fail)
 
 ```
 ├── README.md
+├── Makefile                 # Build locally with `make`
 ├── primary_main.go          # Primary VM program
 ├── secondary_main.go        # Secondary VM program
 ├── systemd/
@@ -246,8 +247,9 @@ monitoring primary with 10s timeout across 10 devices (both channels must fail)
 │   ├── zonedown-primary.service   # Primary heartbeat service
 │   └── zonedown-secondary.service # Secondary monitor service
 └── scripts/
-    ├── setup-azure-infra.sh  # Create Elastic SAN, volumes (run once)
-    ├── setup-vm.sh           # Install packages, connect iSCSI, deploy services
+    ├── setup.sh              # One-command end-to-end setup (recommended)
+    ├── setup-azure-infra.sh  # Create infra only (alternative)
+    ├── setup-vm.sh           # Set up a single VM via SSH (alternative)
     ├── monitor.sh            # Check status locally on a VM
     └── monitor-remote.sh     # Check status remotely via az vm run-command
 ```
@@ -258,20 +260,31 @@ All scripts accept `--name <prefix>` to derive resource names. For example,
 `--name alice` creates `alice-zone-down-poc-rg`, `alice-zrs-esan`, etc.
 The default prefix is `jbhushan`.
 
-### 1. Create Azure infrastructure
+### Option A: One-command setup (recommended)
+
+```bash
+./scripts/setup.sh --name myprefix
+```
+
+This does everything from your local machine: creates the Azure
+infrastructure, provisions VMs, installs packages, connects iSCSI volumes,
+uploads and builds the Go binaries, installs systemd services, and starts
+them — all via `az vm run-command`. No SSH required.
+
+Run `./scripts/setup.sh --help` for all options (location, VM size,
+volume count, etc.).
+
+### Option B: Separate infra + VM setup
+
+If you prefer finer control or need to SSH into the VMs:
+
+**1. Create Azure infrastructure:**
 
 ```bash
 ./scripts/setup-azure-infra.sh --name myprefix
 ```
 
-This creates the full stack end-to-end: resource group, VNet/subnet/NSG,
-Elastic SAN with 10 volumes, and two VMs (zone 1 and zone 2). Run
-`./scripts/setup-azure-infra.sh --help` for all options (location, VM size,
-volume count, etc.).
-
-### 2. Set up each VM
-
-Copy this repo to both VMs, then run:
+**2. Set up each VM** (copy repo to VM, then run):
 
 ```bash
 # On the primary VM:
@@ -283,17 +296,14 @@ Copy this repo to both VMs, then run:
   --portal <PORTAL_HOST:3260>
 ```
 
-This installs packages, connects all iSCSI volumes, builds the Go binaries,
-and installs the systemd services.
-
-### 3. Start services
+**3. Start services:**
 
 ```bash
 systemctl start iscsi-esan iptables-poc zonedown-primary   # on primary
 systemctl start iscsi-esan iptables-poc zonedown-secondary  # on secondary
 ```
 
-### 4. Monitor
+### Monitor
 
 ```bash
 # Locally on a VM:
