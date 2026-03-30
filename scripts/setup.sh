@@ -95,18 +95,26 @@ SECONDARY_VM="${NAME_PREFIX}-zrs-secondary"
 # Helper: run a script on a VM via az vm run-command, print stdout/stderr
 run_on_vm() {
   local vm="$1"; shift
-  az vm run-command invoke \
+  local output
+  if ! output=$(az vm run-command invoke \
     --resource-group "$RG" \
     --name "$vm" \
     --command-id RunShellScript \
     --scripts "$@" \
-    -o json 2>&1 | python3 -c "
+    -o json 2>&1); then
+    echo "  ERROR running command on $vm:"
+    echo "$output" | tail -5
+    return 1
+  fi
+  echo "$output" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
     for v in data.get('value', []):
         print(v.get('message',''))
-except: print('  (command failed or VM unreachable)')
+except Exception as e:
+    print(f'  (failed to parse response: {e})')
+    print(sys.stdin.read()[:500])
 "
 }
 
@@ -309,6 +317,24 @@ echo "  Portal: $PORTAL"
 # =============================================
 # PHASE 2: VM Configuration (via run-command)
 # =============================================
+
+echo ""
+echo "Waiting for VMs to be ready for run-commands..."
+for VM in "$PRIMARY_VM" "$SECONDARY_VM"; do
+  for attempt in $(seq 1 12); do
+    if az vm run-command invoke --resource-group "$RG" --name "$VM" \
+        --command-id RunShellScript --scripts "echo ready" -o none 2>/dev/null; then
+      echo "  $VM — ready"
+      break
+    fi
+    if [[ $attempt -eq 12 ]]; then
+      echo "  ERROR: $VM not responding after 2 minutes"
+      exit 1
+    fi
+    echo "  $VM — not ready yet, retrying in 10s ($attempt/12)..."
+    sleep 10
+  done
+done
 
 echo ""
 echo "=== [6/10] Installing packages on both VMs ==="
