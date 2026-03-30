@@ -137,7 +137,7 @@ az elastic-san create \
   --location "$LOCATION" \
   --base-size-tib "$ESAN_BASE_SIZE_TIB" \
   --extended-capacity-size-tib 0 \
-  --sku Premium_ZRS \
+  --sku '{name:Premium_ZRS,tier:Premium}' \
   -o none
 echo "  $ESAN_NAME created"
 
