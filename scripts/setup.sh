@@ -69,6 +69,11 @@ USAGE
   esac
 done
 
+SSH_ARGS=(--ssh-key-values "$SSH_PUB_KEY")
+if [[ ! -f "$SSH_PUB_KEY" ]]; then
+  SSH_ARGS=(--generate-ssh-keys)
+fi
+
 if [[ ! "$NAME_PREFIX" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
   echo "ERROR: --name must contain only lowercase letters, digits, and hyphens (no underscores, no leading/trailing hyphens)."
   echo "  Got: '$NAME_PREFIX'"
@@ -241,7 +246,7 @@ else
     --subnet "$SUBNET_NAME" \
     --nsg "$NSG_NAME" \
     --admin-username "$ADMIN_USER" \
-    --ssh-key-values "$SSH_PUB_KEY" \
+    "${SSH_ARGS[@]}" \
     --public-ip-sku Standard \
     -o none
 fi
@@ -266,7 +271,7 @@ else
     --subnet "$SUBNET_NAME" \
     --nsg "$NSG_NAME" \
     --admin-username "$ADMIN_USER" \
-    --ssh-key-values "$SSH_PUB_KEY" \
+    "${SSH_ARGS[@]}" \
     --public-ip-sku Standard \
     -o none
 fi
