@@ -69,6 +69,13 @@ USAGE
   esac
 done
 
+if [[ ! "$NAME_PREFIX" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+  echo "ERROR: --name must contain only lowercase letters, digits, and hyphens (no underscores, no leading/trailing hyphens)."
+  echo "  Got: '$NAME_PREFIX'"
+  echo "  Example: --name my-project"
+  exit 1
+fi
+
 # --- Derived names ---
 RG="${NAME_PREFIX}-zone-down-poc-rg"
 ESAN_NAME="${NAME_PREFIX}-zrs-esan"
