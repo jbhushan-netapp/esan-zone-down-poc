@@ -12,28 +12,36 @@
 #   5. Enables all services for auto-start on boot
 #
 # Usage:
-#   ./setup-vm.sh --role primary --remote-ip <SECONDARY_IP> --portal <PORTAL_HOSTNAME>
-#   ./setup-vm.sh --role secondary --portal <PORTAL_HOSTNAME>
+#   ./setup-vm.sh --name <prefix> --role primary --remote-ip <SECONDARY_IP> --portal <PORTAL>
+#   ./setup-vm.sh --name <prefix> --role secondary --portal <PORTAL>
 #
 set -euo pipefail
 
+NAME_PREFIX="jbhushan"
 ROLE=""
 REMOTE_IP=""
 PORTAL=""
-PR_KEY_PRIMARY="0x1000"
-PR_KEY_SECONDARY="0x2000"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --name)      NAME_PREFIX="$2"; shift 2 ;;
     --role)      ROLE="$2"; shift 2 ;;
     --remote-ip) REMOTE_IP="$2"; shift 2 ;;
     --portal)    PORTAL="$2"; shift 2 ;;
+    -h|--help)
+      echo "Usage: $0 --name PREFIX --role <primary|secondary> --portal <host:port> [--remote-ip <IP>]"
+      exit 0
+      ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
 
+RG="${NAME_PREFIX}-zone-down-poc-rg"
+ESAN_NAME="${NAME_PREFIX}-zrs-esan"
+VG_NAME="${NAME_PREFIX}-zrs-vg"
+
 if [[ -z "$ROLE" || -z "$PORTAL" ]]; then
-  echo "Usage: $0 --role <primary|secondary> --portal <portal_hostname:port> [--remote-ip <IP>]"
+  echo "Usage: $0 --name PREFIX --role <primary|secondary> --portal <host:port> [--remote-ip <IP>]"
   exit 1
 fi
 if [[ "$ROLE" == "primary" && -z "$REMOTE_IP" ]]; then
@@ -63,9 +71,9 @@ systemctl enable --now iscsid
 # --- Discover and connect iSCSI targets ---
 echo "=== Discovering iSCSI targets on $PORTAL ==="
 IQNS=$(az elastic-san volume list \
-  --elastic-san-name jbhushan-zrs-esan \
-  --volume-group-name jbhushan-zrs-vg \
-  --resource-group jbhushan-zone-down-poc-rg \
+  --elastic-san-name "$ESAN_NAME" \
+  --volume-group-name "$VG_NAME" \
+  --resource-group "$RG" \
   -o json 2>/dev/null | python3 -c "
 import sys, json
 vols = sorted(json.load(sys.stdin), key=lambda v: v['name'])

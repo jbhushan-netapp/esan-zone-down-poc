@@ -10,35 +10,69 @@
 #   - Azure CLI logged in with appropriate permissions
 #   - An SSH public key at ~/.ssh/id_rsa.pub (or set SSH_PUB_KEY below)
 #
-# Usage: ./setup-azure-infra.sh
+# Usage:
+#   ./setup-azure-infra.sh --name <prefix>
+#   ./setup-azure-infra.sh --name jbhushan --location westus2 --vm-size Standard_D4s_v5
+#   ./setup-azure-infra.sh   (uses defaults)
+#
+# All resource names are derived from the --name prefix.
 #
 set -euo pipefail
 
-# --- Configuration (edit these as needed) ---
-RG="jbhushan-zone-down-poc-rg"
+# --- Defaults ---
+NAME_PREFIX="jbhushan"
 LOCATION="eastus2"
-
-# Elastic SAN
-ESAN_NAME="jbhushan-zrs-esan"
-VG_NAME="jbhushan-zrs-vg"
-VOL_PREFIX="jbhushan-zrs-vol"
 VOL_COUNT=10
 VOL_SIZE_GIB=1
 ESAN_BASE_SIZE_TIB=1
-
-# Networking
-VNET_NAME="jbhushan-zrs-vnet"
-SUBNET_NAME="jbhushan-zrs-subnet"
-NSG_NAME="jbhushan-zrs-nsg"
 VNET_PREFIX="10.163.0.0/24"
-
-# VMs
-PRIMARY_VM="jbhushan-zrs-primary"
-SECONDARY_VM="jbhushan-zrs-secondary"
 VM_SIZE="Standard_E8ds_v6"
 VM_IMAGE="MicrosoftCBLMariner:azure-linux-3:azure-linux-3-gen2:latest"
 ADMIN_USER="client"
 SSH_PUB_KEY="${SSH_PUB_KEY:-$HOME/.ssh/id_rsa.pub}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name)           NAME_PREFIX="$2"; shift 2 ;;
+    --location)       LOCATION="$2"; shift 2 ;;
+    --vol-count)      VOL_COUNT="$2"; shift 2 ;;
+    --vol-size-gib)   VOL_SIZE_GIB="$2"; shift 2 ;;
+    --esan-size-tib)  ESAN_BASE_SIZE_TIB="$2"; shift 2 ;;
+    --vnet-prefix)    VNET_PREFIX="$2"; shift 2 ;;
+    --vm-size)        VM_SIZE="$2"; shift 2 ;;
+    --vm-image)       VM_IMAGE="$2"; shift 2 ;;
+    --admin-user)     ADMIN_USER="$2"; shift 2 ;;
+    --ssh-key)        SSH_PUB_KEY="$2"; shift 2 ;;
+    -h|--help)
+      echo "Usage: $0 [--name PREFIX] [--location REGION] [--vol-count N] [--vm-size SIZE] ..."
+      echo ""
+      echo "Options:"
+      echo "  --name PREFIX       Name prefix for all resources (default: jbhushan)"
+      echo "  --location REGION   Azure region (default: eastus2)"
+      echo "  --vol-count N       Number of volumes (default: 10)"
+      echo "  --vol-size-gib N    Size of each volume in GiB (default: 1)"
+      echo "  --esan-size-tib N   Elastic SAN base size in TiB (default: 1)"
+      echo "  --vnet-prefix CIDR  VNet address space (default: 10.163.0.0/24)"
+      echo "  --vm-size SIZE      VM SKU (default: Standard_E8ds_v6)"
+      echo "  --vm-image IMAGE    VM image URN (default: Azure Linux 3)"
+      echo "  --admin-user USER   VM admin username (default: client)"
+      echo "  --ssh-key PATH      Path to SSH public key (default: ~/.ssh/id_rsa.pub)"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1. Use --help for usage."; exit 1 ;;
+  esac
+done
+
+# --- Derived names ---
+RG="${NAME_PREFIX}-zone-down-poc-rg"
+ESAN_NAME="${NAME_PREFIX}-zrs-esan"
+VG_NAME="${NAME_PREFIX}-zrs-vg"
+VOL_PREFIX="${NAME_PREFIX}-zrs-vol"
+VNET_NAME="${NAME_PREFIX}-zrs-vnet"
+SUBNET_NAME="${NAME_PREFIX}-zrs-subnet"
+NSG_NAME="${NAME_PREFIX}-zrs-nsg"
+PRIMARY_VM="${NAME_PREFIX}-zrs-primary"
+SECONDARY_VM="${NAME_PREFIX}-zrs-secondary"
 
 # -----------------------------------------------
 

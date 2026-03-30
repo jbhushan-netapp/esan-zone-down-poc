@@ -4,29 +4,37 @@
 # Use this when you cannot SSH directly into the VMs.
 #
 # Usage:
-#   ./monitor-remote.sh                  # check both VMs
-#   ./monitor-remote.sh --primary        # check primary only
-#   ./monitor-remote.sh --secondary      # check secondary only
-#   ./monitor-remote.sh --takeover       # show takeover events only
+#   ./monitor-remote.sh                          # check both VMs (default prefix)
+#   ./monitor-remote.sh --name myprefix           # use custom name prefix
+#   ./monitor-remote.sh --primary                 # check primary only
+#   ./monitor-remote.sh --secondary               # check secondary only
+#   ./monitor-remote.sh --takeover                # show takeover events only
 #
 set -euo pipefail
 
-RG="jbhushan-zone-down-poc-rg"
-PRIMARY_VM="jbhushan-zrs-primary"
-SECONDARY_VM="jbhushan-zrs-secondary"
+NAME_PREFIX="jbhushan"
 CHECK_PRIMARY=true
 CHECK_SECONDARY=true
-SCRIPT='echo "--- Service ---" && systemctl is-active zonedown-ROLE 2>/dev/null && echo "ACTIVE" || echo "INACTIVE"; echo "--- Disks ---" && lsblk -d -o NAME,TRAN 2>/dev/null | grep -c iscsi || echo 0; echo "--- Log (last 20) ---" && tail -20 /var/log/poc/ROLE.log 2>/dev/null || echo "No log"'
 TAKEOVER=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --name)      NAME_PREFIX="$2"; shift 2 ;;
     --primary)   CHECK_SECONDARY=false; shift ;;
     --secondary) CHECK_PRIMARY=false; shift ;;
     --takeover)  TAKEOVER=true; shift ;;
+    -h|--help)
+      echo "Usage: $0 [--name PREFIX] [--primary|--secondary] [--takeover]"
+      exit 0
+      ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+RG="${NAME_PREFIX}-zone-down-poc-rg"
+PRIMARY_VM="${NAME_PREFIX}-zrs-primary"
+SECONDARY_VM="${NAME_PREFIX}-zrs-secondary"
+SCRIPT='echo "--- Service ---" && systemctl is-active zonedown-ROLE 2>/dev/null && echo "ACTIVE" || echo "INACTIVE"; echo "--- Disks ---" && lsblk -d -o NAME,TRAN 2>/dev/null | grep -c iscsi || echo 0; echo "--- Log (last 20) ---" && tail -20 /var/log/poc/ROLE.log 2>/dev/null || echo "No log"'
 
 run_on_vm() {
   local vm="$1" role="$2"
